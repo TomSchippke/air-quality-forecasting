@@ -8,6 +8,7 @@ from src.data import (
     AirQualityTorchDataset,
     AirQualityDataLoader
 )
+from src.models.lstm import LSTMForecaster, train_lstm
 from src.models.baselines import train_random_forest
 
 
@@ -37,18 +38,50 @@ training_data_toch = AirQualityTorchDataset(
     horizon=6
 )
 
+val_data_toch = AirQualityTorchDataset(
+    X=X_val,
+    y=y_val,
+    input_window=48,
+    horizon=6
+)
+
 training_loader = AirQualityDataLoader(
     dataset=training_data_toch,
     batch_size=32,
     shuffle=True
 )
 
+val_loader = AirQualityDataLoader(
+    dataset=val_data_toch,
+    batch_size=32,
+    shuffle=False
+)
 
 ############################### MODEL TRAINING ###############################
 
+## random forest
 rf_model = train_random_forest(
     X_test_train=pd.concat([X_train, X_val], axis=0),
     y_test_train=pd.concat([y_train, y_val], axis=0),
     recall=False # turn True to avoid retraining if model already exist 
 )
 
+
+## LSTM model
+lstm_model = LSTMForecaster(
+    n_features=X_train.shape[1],
+    hidden_size=64,
+    num_layers=2,
+    horizon=6,
+    dropout=0.2,
+)
+
+history = train_lstm(
+    model=lstm_model,
+    train_loader=training_loader,
+    val_loader=val_loader,
+    n_epochs=50,
+    lr=1e-3,
+    patience=5,
+    recall=False # turn True to avoid retraining if model already exist 
+)
