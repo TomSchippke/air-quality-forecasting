@@ -1,5 +1,5 @@
 import pandas as pd
-from src.data import (
+from data import (
     load_and_preprocess, 
     add_lag_features, 
     temporal_split, 
@@ -8,8 +8,8 @@ from src.data import (
     AirQualityTorchDataset,
     AirQualityDataLoader
 )
-from src.models.lstm import LSTMForecaster, train_lstm
-from src.models.baselines import train_random_forest
+from models.lstm import LSTMForecaster, train_lstm
+from models.baselines import train_random_forest
 
 
 ############################### LOAD AND PROCESS THE DATA ###############################
