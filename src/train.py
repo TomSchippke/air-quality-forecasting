@@ -1,15 +1,16 @@
 import pandas as pd
-from data import (
+import numpy as np
+from src.data import (
     load_and_preprocess, 
     add_lag_features, 
     temporal_split, 
     split_X_y, 
     scale_features,
-    AirQualityTorchDataset,
-    AirQualityDataLoader
+    AirQualityTorchDataset
 )
-from models.lstm import LSTMForecaster, train_lstm
-from models.baselines import train_random_forest
+from torch.utils.data import DataLoader
+from src.models.lstm import LSTMForecaster, train_lstm
+from src.models.baselines import train_random_forest
 
 
 ############################### LOAD AND PROCESS THE DATA ###############################
@@ -45,13 +46,13 @@ val_data_toch = AirQualityTorchDataset(
     horizon=6
 )
 
-training_loader = AirQualityDataLoader(
+training_loader = DataLoader(
     dataset=training_data_toch,
     batch_size=32,
     shuffle=True
 )
 
-val_loader = AirQualityDataLoader(
+val_loader = DataLoader(
     dataset=val_data_toch,
     batch_size=32,
     shuffle=False
@@ -61,7 +62,7 @@ val_loader = AirQualityDataLoader(
 
 ## random forest
 rf_model = train_random_forest(
-    X_test_train=pd.concat([X_train, X_val], axis=0),
+    X_test_train=np.concatenate([X_train, X_val], axis=0),
     y_test_train=pd.concat([y_train, y_val], axis=0),
     recall=False # turn True to avoid retraining if model already exist 
 )

@@ -66,7 +66,8 @@ def train_random_forest(
     
     print(f"=========================================")
     print(f"END of Random Forest training.")
-    
+    print(f"=========================================")
+
     return best_rf
     
     

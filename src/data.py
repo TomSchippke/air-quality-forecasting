@@ -18,7 +18,7 @@ def load_and_preprocess(location: str = "Aotizhongxin") -> pd.DataFrame:
         pd.DataFrame: The preprocessed data.
     """
 
-    df = pd.read_csv(f"../data/raw/PRSA_Data_20130301-20170228/PRSA_Data_{location}_20130301-20170228.csv")
+    df = pd.read_csv(f"data/raw/PRSA_Data_20130301-20170228/PRSA_Data_{location}_20130301-20170228.csv")
 
     df["datetime"] = pd.to_datetime(df[["year", "month", "day", "hour"]])
     df = df.sort_values("datetime").reset_index(drop=True)
@@ -138,8 +138,8 @@ class AirQualityTorchDataset(torch.utils.data.Dataset):
         horizon: int = 12,
         
     ):
-        self.X = torch.tensor(X.values, dtype = torch.float36)
-        self.y = torch.tensor(y.values, dtype = torch.float36)
+        self.X = torch.tensor(X, dtype = torch.float32)
+        self.y = torch.tensor(y.values if hasattr(y, "values") else y, dtype = torch.float32)
         self.input_window = input_window # size of the sequence used to predict the next value
         self.horizon = horizon # number of target
         # each time we use input_window timesteps to predict the next horizon timesteps
