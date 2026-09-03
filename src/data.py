@@ -7,6 +7,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 import torch 
 
+
 def load_and_preprocess(location: str = "Aotizhongxin") -> pd.DataFrame:
     """
     Load and preprocess the data for a specific location.
@@ -41,7 +42,12 @@ def load_and_preprocess(location: str = "Aotizhongxin") -> pd.DataFrame:
     return df
 
 
-def add_lag_features(df: pd.DataFrame, target: str = "PM2.5", lags: list[int] = [1, 2, 3, 6, 12, 24]) -> pd.DataFrame:
+def add_lag_features(
+    df: pd.DataFrame, 
+    target: str = "PM2.5", 
+    lags: list[int] = [1, 2, 3, 6, 12, 24],
+    horizon: int = 6,
+) -> pd.DataFrame:
     """
     Add lag features for the target variable.
 
@@ -53,10 +59,13 @@ def add_lag_features(df: pd.DataFrame, target: str = "PM2.5", lags: list[int] = 
         pd.DataFrame: The data with lag features.
     """
 
+
     df = df.copy()
     for l in lags: 
         df[f"{target}_lag_{l}"] = df[target].shift(l)
-    
+    for l in range(1, horizon + 1):
+        df[f"{target}_t+{l}"] = df[target].shift(-l)
+
     return df
 
 def temporal_split(df: pd.DataFrame, train_ratio: float = 0.7, val_ratio: float = 0.15) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -85,7 +94,7 @@ def temporal_split(df: pd.DataFrame, train_ratio: float = 0.7, val_ratio: float 
     
     return train_df, val_df, test_df
 
-def split_X_y(df: pd.DataFrame, target: str = "PM2.5", to_drop: list[str] = ["datetime", "station", "No", "day", "year"], include_PM10: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
+def split_X_y_seq(df: pd.DataFrame, target: str = "PM2.5", to_drop: list[str] = ["datetime", "station", "No", "day", "year"], include_PM10: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Split the data into features (X) and target (y).
 
@@ -102,9 +111,39 @@ def split_X_y(df: pd.DataFrame, target: str = "PM2.5", to_drop: list[str] = ["da
     y = df[target]
 
     if not include_PM10:
-        X = df.drop(columns=to_drop+[target]+["PM10"])
+        X = df.drop(columns=to_drop + [target] + ["PM10"])
     else: 
-        X = df.drop(columns=to_drop+[target])
+        X = df.drop(columns=to_drop + [target])
+
+    return X, y
+
+def split_X_y_rf(
+    df: pd.DataFrame,
+    target: str = "PM2.5",
+    horizon_columns: list[str] = None,
+    to_drop: list[str] = ["datetime", "station", "No", "day", "year"],
+    include_PM10: bool = True
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Split the data into features (X) and target (y).
+
+    Args:
+        df (pd.DataFrame): The data to split.
+        target (str): The target variable.
+        horizon_columns (list[str]): The columns to use as the target.
+        to_drop (list[str]): The columns to drop.
+        include_PM10 (bool): Whether to include PM10 as a feature.
+
+    Returns:
+        tuple[pd.DataFrame, pd.DataFrame]: The training, validation, and test sets.
+    """
+
+    if not include_PM10:
+        X = df.drop(columns=to_drop + [target] + horizon_columns + ["PM10"])
+    else:
+        X = df.drop(columns=to_drop + [target] + horizon_columns)
+    
+    y = df[horizon_columns]
 
     return X, y
 
@@ -128,8 +167,36 @@ def scale_features(X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFr
 
     return X_train, X_val, X_test, scaler
 
+def scale_target(train_target: pd.DataFrame, val_target: pd.DataFrame, test_target: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, StandardScaler]:    
+    """
+    Scale the target using StandardScaler.
 
-class AirQualityTorchDataset(torch.utils.data.Dataset):
+    Args:
+        train_target (pd.DataFrame): The training target.
+        val_target (pd.DataFrame): The validation target.
+        test_target (pd.DataFrame): The test target.
+
+    Returns:
+        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, StandardScaler]: The scaled target.
+    """
+    scaler = StandardScaler()
+    # Save original shapes
+    tr_shape = train_target.shape
+    va_shape = val_target.shape
+    te_shape = test_target.shape
+
+    # Reshape to 2D array for StandardScaler, then reshape back
+    train_target = scaler.fit_transform(np.array(train_target).reshape(-1, 1))
+    val_target = scaler.transform(np.array(val_target).reshape(-1, 1))
+    test_target = scaler.transform(np.array(test_target).reshape(-1, 1))
+
+    train_target = train_target.flatten() if len(tr_shape) == 1 else train_target.reshape(tr_shape)
+    val_target = val_target.flatten() if len(va_shape) == 1 else val_target.reshape(va_shape)
+    test_target = test_target.flatten() if len(te_shape) == 1 else test_target.reshape(te_shape)
+
+    return train_target, val_target, test_target, scaler
+
+class AirQualityLSTMDataset(torch.utils.data.Dataset):
 
     def __init__(self, 
         X: pd.DataFrame,
@@ -167,41 +234,4 @@ class AirQualityTorchDataset(torch.utils.data.Dataset):
         y_seq = self.y[idx + self.input_window : idx + self.input_window + self.horizon]
         return x_seq, y_seq
         
-        
-
-
-
-if __name__ == "__main__": 
-
-    df = load_and_preprocess(
-        location="Aotizhongxin"
-    )
-    df = add_lag_features(
-        df=df,
-        target="PM2.5",
-        lags=[1,2,3,6,12,24]
-    )
-
-    train_df, val_df, test_df = temporal_split(df)
-    X_train, y_train = split_X_y(train_df)
-    X_val, y_val = split_X_y(val_df)
-    X_test, y_test = split_X_y(test_df)
-
-    X_train, X_val, X_test, scaler = scale_features(X_train, X_val, X_test)
-
-
-    train_torch_dataset = AirQualityTorchDataset(
-        X_train, 
-        y_train,
-        input_window=48, # = 2 days of features
-        horizon=6 # to predict the next 6 hours of PM2.5 
-    )
-    
-    train_loader = torch.utils.data.DataLoader(
-        train_torch_dataset, 
-        batch_size=32, 
-        shuffle=True # shuffle the sliding windows for each epoch 
-    )
- 
-    
-    
+            

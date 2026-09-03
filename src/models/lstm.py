@@ -1,3 +1,8 @@
+'''
+This is a simple LSTM model for time series forecasting.
+'''
+
+
 import torch 
 import torch.nn as nn 
 import os
@@ -72,8 +77,8 @@ def train_lstm(
     patience: int = 5,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
     recall: bool = False,
-    model_path: str = "../../results/models/lstm_best.pth",
-    figure_path: str = "../../results/figures/lstm_loss_curve.png"
+    model_path: str = "results/models/lstm_best.pth",
+    figure_path: str = "results/figures/lstm_loss_curve.png"
 ) -> dict: 
     """
     Train the LSTM model.
@@ -109,6 +114,7 @@ def train_lstm(
     best_val_loss = float('inf') # initialize the best validation loss
     epoch_without_improvement = 0
     history = {"train_loss": [], "val_loss": []}
+    best_state = None
 
     for epoch in range(n_epochs): 
         

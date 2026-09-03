@@ -14,7 +14,7 @@ def train_random_forest(
     y_test_train: pd.DataFrame, 
     random_state: int = 42,
     recall: bool = False,
-    model_path: str = "../../results/models/random_forest_best.joblib",
+    model_path: str = "results/models/random_forest_best.joblib",
     param_grid: dict[str, list[int]] = {
         'n_estimators': [100, 200, 500],
         'max_depth': [15, 25, None],
@@ -54,7 +54,7 @@ def train_random_forest(
     
     results_df = pd.DataFrame(gs.cv_results_)
     results_df = results_df.sort_values(by='rank_test_score')
-    results_df.to_csv("../../results/random_forest_grid_search_results.csv", index=False)
+    results_df.to_csv("results/random_forest_grid_search_results.csv", index=False)
 
     print(f"=========================================")
     print(f"Best parameters: {best_params}")
