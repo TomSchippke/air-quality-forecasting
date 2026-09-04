@@ -16,20 +16,35 @@ def main():
     with open("results/metrics.json", "r") as f:
         metrics = json.load(f)
         
-    models = list(metrics.keys())
-    rmse_vals = [metrics[m]["RMSE"] for m in models]
-    mae_vals = [metrics[m]["MAE"] for m in models]
+    # Sort models by RMSE (lowest to highest, meaning best to worst)
+    sorted_metrics = sorted(metrics.items(), key=lambda item: item[1]["RMSE"])
+    models = [item[0].upper() for item in sorted_metrics]
+    rmse_vals = [item[1]["RMSE"] for item in sorted_metrics]
+    mae_vals = [item[1]["MAE"] for item in sorted_metrics]
     
     x = np.arange(len(models))
     width = 0.35
 
     # 1. Bar chart comparing RMSE and MAE
-    fig, ax = plt.subplots(figsize=(8, 6))
-    rects1 = ax.bar(x - width/2, rmse_vals, width, label='RMSE')
-    rects2 = ax.bar(x + width/2, mae_vals, width, label='MAE')
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Using a modern palette
+    color_rmse = '#1E88E5' # vibrant blue
+    color_mae = '#FFC107'  # vibrant amber
+    
+    rects1 = ax.bar(x - width/2, rmse_vals, width, label='RMSE', color=color_rmse, edgecolor='black', linewidth=0.5)
+    rects2 = ax.bar(x + width/2, mae_vals, width, label='MAE', color=color_mae, edgecolor='black', linewidth=0.5)
 
-    ax.set_ylabel('Scores (PM2.5 µg/m³)')
-    ax.set_title('Comparison of RMSE and MAE between Models')
+    # Add numeric labels on top of the bars
+    ax.bar_label(rects1, padding=3, fmt='%.1f', fontsize=10, fontweight='bold')
+    ax.bar_label(rects2, padding=3, fmt='%.1f', fontsize=10, fontweight='bold')
+    
+    # Ensure there is enough space on the y-axis for the labels
+    max_val = max(max(rmse_vals), max(mae_vals))
+    ax.set_ylim(0, max_val * 1.15)
+
+    ax.set_ylabel('Scores (PM2.5 µg/m³)', fontsize=12, fontweight='bold')
+    ax.set_title('Comparison of RMSE and MAE between Models (Best to Worst)', fontsize=14, fontweight='bold')
     ax.set_xticks(x)
     ax.set_xticklabels(models)
     ax.legend()
@@ -146,8 +161,8 @@ def main():
         print("Generating Transformer prediction horizons plot...")
         plt.figure(figsize=(14, 8))
         
-        T_start = 150
-        T_end = 350
+        T_start = 200
+        T_end = 300
         time_axis = np.arange(T_start, T_end)
         
         true_curve = transformer_true[T_start:T_end, 0]
@@ -165,7 +180,7 @@ def main():
                     curve_h.append(np.nan)
             plt.plot(time_axis, curve_h, label=f"Prediction at t-{h+1}h", color=colors[h], alpha=0.9, linewidth=1.5)
             
-        plt.title("Transformer: Impact of the prediction horizon (Hours 150 to 350)")
+        plt.title("Transformer: Impact of the prediction horizon (Hours 200 to 300)")
         plt.xlabel("Time (Target Time T)")
         plt.ylabel("PM2.5 (µg/m³)")
         plt.legend()
@@ -177,6 +192,28 @@ def main():
         print(f"Saved Transformer horizons plot to {trans_horizon_plot_path}")
     except FileNotFoundError:
         print("Transformer predictions not found. Skipping Transformer plots.")
+
+    # 7. Naive Baseline Predictions
+    print("Generating Naive Baseline prediction plot...")
+    try:
+        naive_true = np.load("results/predictions/naive_y_true.npy")
+        naive_pred = np.load("results/predictions/naive_y_pred.npy")
+        
+        plt.figure(figsize=(14, 6))
+        plt.plot(naive_true[:200, 0], label="True PM2.5 (t+1)", color="blue", linewidth=1.5)
+        plt.plot(naive_pred[:200, 0], label="Predicted PM2.5 (t+1)", color="red", linestyle="--", linewidth=1.5)
+        plt.title("Naive Baseline: Real vs Predicted 1-hour ahead (First 200 hours)")
+        plt.xlabel("Hours")
+        plt.ylabel("PM2.5 (µg/m³)")
+        plt.legend()
+        plt.grid(True)
+        
+        naive_plot_path = "results/figures/naive_predictions.png"
+        plt.savefig(naive_plot_path)
+        plt.close()
+        print(f"Saved Naive Baseline predictions plot to {naive_plot_path}")
+    except FileNotFoundError:
+        print("Naive predictions not found. Skipping Naive plots.")
 
     print("=========================================")
     print("End of figure generation.")
