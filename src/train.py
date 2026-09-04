@@ -2,6 +2,7 @@ from scipy.optimize._trustregion_constr import equality_constrained_sqp
 import torch
 import json
 import numpy as np
+import sys
 from src.data import (
     load_and_preprocess, 
     add_lag_features, 
@@ -13,15 +14,18 @@ from src.data import (
     AirQualityLSTMDataset
 )
 from torch.utils.data import DataLoader
-from src.models.lstm import LSTMForecaster, train_lstm
-from src.models.transformer import TransformerForecaster, train_transformer
+from src.models.lstm import LSTMForecaster, train_lstm, tune_lstm
+from src.models.transformer import TransformerForecaster, train_transformer, tune_transformer
 from src.models.baselines import train_random_forest
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 ############################### GLOBAL PARAMETERS ###############################
 
 HORIZON = 6
-INCLUDE_PM10 = True
+INCLUDE_PM10 = False
+TUNE_LSTM = True
+TUNE_TRANSFORMER = True
+FEATURE_TO_DROP = ["datetime", "station", "No", "day", "year"]
 
 
 ############################### LOAD AND PROCESS THE DATA ###############################
@@ -47,10 +51,9 @@ test_df = test_df.dropna().reset_index(drop=True)
 ### seq data
 lag_columns = [f"PM2.5_lag_{l}" for l in [1, 2, 3, 6, 12, 24]]
 horizon_columns = [f"PM2.5_t+{l}" for l in range(1, HORIZON + 1)]
-default_drop = ["datetime", "station", "No", "day", "year"]
-X_train_seq, y_train_seq = split_X_y_seq(train_df, to_drop=default_drop + lag_columns + horizon_columns, include_PM10=INCLUDE_PM10)
-X_val_seq, y_val_seq = split_X_y_seq(val_df, to_drop=default_drop + lag_columns + horizon_columns, include_PM10=INCLUDE_PM10)
-X_test_seq, y_test_seq = split_X_y_seq(test_df, to_drop=default_drop + lag_columns + horizon_columns, include_PM10=INCLUDE_PM10)
+X_train_seq, y_train_seq = split_X_y_seq(train_df, to_drop=FEATURE_TO_DROP + lag_columns + horizon_columns, include_PM10=INCLUDE_PM10)
+X_val_seq, y_val_seq = split_X_y_seq(val_df, to_drop=FEATURE_TO_DROP + lag_columns + horizon_columns, include_PM10=INCLUDE_PM10)
+X_test_seq, y_test_seq = split_X_y_seq(test_df, to_drop=FEATURE_TO_DROP + lag_columns + horizon_columns, include_PM10=INCLUDE_PM10)
 
 ### rf data
 X_train_rf, y_train_rf = split_X_y_rf(train_df, horizon_columns=horizon_columns, include_PM10=INCLUDE_PM10)
@@ -121,46 +124,96 @@ rf_model = train_random_forest(
     recall=True # Force retraining since we changed the target to 6 horizons
 )
 
-
 ## LSTM model
-lstm_model = LSTMForecaster(
-    n_features=X_train_seq.shape[1],
-    hidden_size=64,
-    num_layers=1,
-    horizon=HORIZON,
-    dropout=0.3,
-)
-
-history = train_lstm(
-    model=lstm_model,
-    train_loader=training_loader,
-    val_loader=val_loader,
-    n_epochs=100,
-    lr=1e-5,
-    patience=10,
-    recall=True # turn True to avoid retraining if model already exist 
-)
+if TUNE_LSTM:
+    best_lstm_params = tune_lstm(
+        train_loader=training_loader,
+        val_loader=val_loader,
+        n_features=X_train_seq.shape[1],
+        horizon=HORIZON,
+        n_trials=30
+    )
+    lstm_model = LSTMForecaster(
+        n_features=X_train_seq.shape[1],
+        hidden_size=best_lstm_params["hidden_size"],
+        num_layers=best_lstm_params["num_layers"],
+        horizon=HORIZON,
+        dropout=best_lstm_params["dropout"],
+    )
+    history = train_lstm(
+        model=lstm_model,
+        train_loader=training_loader,
+        val_loader=val_loader,
+        n_epochs=100,
+        lr=best_lstm_params["lr"],
+        patience=10,
+        recall=False
+    )
+else:
+    lstm_model = LSTMForecaster(
+        n_features=X_train_seq.shape[1],
+        hidden_size=128,
+        num_layers=2,
+        horizon=HORIZON,
+        dropout=0.4,
+    )
+    
+    history = train_lstm(
+        model=lstm_model,
+        train_loader=training_loader,
+        val_loader=val_loader,
+        n_epochs=100,
+        lr=1e-4,
+        patience=10,
+        recall=True # turn True to avoid retraining if model already exist 
+    )
 
 
 ## Transformer model
-transformer_model = TransformerForecaster(
-    n_features=X_train_seq.shape[1],
-    d_model=128,
-    nhead=8,        
-    num_layers=2,        
-    dropout=0.3,
-    horizon=HORIZON
-)
-
-history = train_transformer(
-    model=transformer_model,
-    train_loader=training_loader,
-    val_loader=val_loader,
-    n_epochs=100,
-    lr=1e-5,
-    patience=10,
-    recall=False 
-)
+if TUNE_TRANSFORMER:
+    best_trans_params = tune_transformer(
+        train_loader=training_loader,
+        val_loader=val_loader,
+        n_features=X_train_seq.shape[1],
+        horizon=HORIZON,
+        n_trials=30
+    )
+    transformer_model = TransformerForecaster(
+        n_features=X_train_seq.shape[1],
+        d_model=best_trans_params["d_model"],
+        nhead=best_trans_params["nhead"],
+        num_layers=best_trans_params["num_layers"],
+        dropout=best_trans_params["dropout"],
+        horizon=HORIZON
+    )
+    history = train_transformer(
+        model=transformer_model,
+        train_loader=training_loader,
+        val_loader=val_loader,
+        n_epochs=100,
+        lr=best_trans_params["lr"],
+        patience=10,
+        recall=False
+    )
+else:
+    transformer_model = TransformerForecaster(
+        n_features=X_train_seq.shape[1],
+        d_model=128,
+        nhead=8,        
+        num_layers=2,        
+        dropout=0.3,
+        horizon=HORIZON
+    )
+    
+    history = train_transformer(
+        model=transformer_model,
+        train_loader=training_loader,
+        val_loader=val_loader,
+        n_epochs=100,
+        lr=1e-5,
+        patience=10,
+        recall=True 
+    )
 
 
 ############################### QUICK MODEL EVALUATION ###############################
@@ -208,6 +261,12 @@ def compute_and_save(y_true, y_pred, model_name: str, scaler=None) -> dict:
 ### Random Forest evaluation
 y_pred_rf = rf_model.predict(X_test_rf)
 metrics["random_forest"] = compute_and_save(y_test_rf, y_pred_rf, "rf", target_scaler_rf)
+
+
+### Naive Baseline evaluation
+y_true_naive = test_df[horizon_columns].values
+y_pred_naive = np.tile(test_df[["PM2.5"]].values, (1, HORIZON))
+metrics["naive"] = compute_and_save(y_true_naive, y_pred_naive, "naive", scaler=None)
 
 
 ### LSTM evaluation

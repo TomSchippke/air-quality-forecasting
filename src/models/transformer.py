@@ -5,6 +5,8 @@ This is
 import math 
 import os
 import torch
+import optuna
+import optuna.visualization.matplotlib as optuna_vis
 import torch.nn as nn 
 import matplotlib.pyplot as plt
 
@@ -126,6 +128,7 @@ def train_transformer(
     recall: bool = False,
     model_path: str = "results/models/transformer_best.pth",
     figure_path: str = "results/figures/transformer_loss_curve.png",
+    trial: optuna.Trial = None
 ) -> dict:
     """
     Train the transformer model.
@@ -195,6 +198,11 @@ def train_transformer(
         val_loss /= len(val_loader.dataset)
 
         history["train_loss"].append(train_loss)
+        if trial is not None:
+            trial.report(val_loss, epoch)
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+                
         history["val_loss"].append(val_loss)
         print(f"Epoch {epoch+1}/{n_epochs} - Train Loss: {train_loss:.4f} - Validation Loss: {val_loss:.4f}")
 
@@ -226,8 +234,94 @@ def train_transformer(
     plt.close() 
 
     print(f"=========================================")
-    print("Transformer training completed.")
-    print(f"=========================================")
+    print(f"Saved transformer loss curve to {figure_path}")
+    
+    return history
 
-    return history 
-            
+def tune_transformer(
+    train_loader,
+    val_loader,
+    n_features: int,
+    horizon: int,
+    n_trials: int = 10,
+    device: str = "cuda" if torch.cuda.is_available() else "cpu",
+):
+    """
+    Optuna hyperparameter tuning for Transformer model.
+
+    Args:
+        train_loader: The training data loader.
+        val_loader: The validation data loader.
+        n_features (int): Number of features.
+        horizon (int): Number of timesteps to predict.
+        n_trials (int): Number of trials.
+        device (str): The device to train on.
+
+    Returns:
+        dict[str, list[float]]: A dictionary containing the best hyperparameters.
+    """
+    print("=========================================")
+    print("Starting Optuna Hyperparameter Tuning for Transformer...")
+    print("=========================================")
+
+    def objective(trial):
+        """
+        Objective function for Optuna hyperparameter tuning.
+
+        Args:
+            trial (optuna.Trial): The Optuna trial object.
+
+        Returns:
+            float: The best validation loss.
+        """
+        lr = trial.suggest_float("lr", 5e-6, 5e-3, log=True)
+        d_model = trial.suggest_categorical("d_model", [32, 64, 128, 256])
+        nhead = trial.suggest_categorical("nhead", [2, 4, 8])
+        num_layers = trial.suggest_int("num_layers", 1, 4)
+        dropout = trial.suggest_float("dropout", 0.0, 0.5)
+
+        model = TransformerForecaster(
+            n_features=n_features,
+            d_model=d_model,
+            nhead=nhead,        
+            num_layers=num_layers,        
+            dropout=dropout,
+            horizon=horizon
+        )
+
+        history = train_transformer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            n_epochs=40, # Shorter epochs for faster tuning
+            lr=lr,
+            patience=5,
+            device=device,
+            recall=False,
+            trial=trial
+        )
+        return min(history["val_loss"])
+
+    study = optuna.create_study(
+        direction="minimize",
+        pruner=optuna.pruners.MedianPruner(n_startup_trials=7, n_warmup_steps=10, interval_steps=1)
+    )
+    study.optimize(objective, n_trials=n_trials)
+
+    print("Best hyperparameters found by Optuna: ", study.best_params)
+
+    # Save visualizations
+    import os
+    os.makedirs("results/figures", exist_ok=True)
+    
+    optuna_vis.plot_optimization_history(study)
+    plt.tight_layout()
+    plt.savefig("results/figures/transformer_optuna_history.png")
+    plt.close()
+
+    optuna_vis.plot_param_importances(study)
+    plt.tight_layout()
+    plt.savefig("results/figures/transformer_optuna_importances.png")
+    plt.close()
+
+    return study.best_params

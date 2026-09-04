@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn 
 import os
 import matplotlib.pyplot as plt
+import optuna
+import optuna.visualization.matplotlib as optuna_vis
 
 class LSTMForecaster(nn.Module):
 
@@ -78,7 +80,8 @@ def train_lstm(
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
     recall: bool = False,
     model_path: str = "results/models/lstm_best.pth",
-    figure_path: str = "results/figures/lstm_loss_curve.png"
+    figure_path: str = "results/figures/lstm_loss_curve.png",
+    trial: optuna.Trial = None
 ) -> dict: 
     """
     Train the LSTM model.
@@ -157,6 +160,11 @@ def train_lstm(
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
 
+        if trial is not None:
+            trial.report(val_loss, epoch)
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+
         print(f"Epoch {epoch+1}/{n_epochs} - Train Loss: {train_loss:.4f} - Validation Loss: {val_loss:.4f}")
         
 
@@ -197,8 +205,92 @@ def train_lstm(
     print(f"=========================================")
 
     return history
-            
-        
+
+def tune_lstm(
+    train_loader,
+    val_loader,
+    n_features: int,
+    horizon: int,
+    n_trials: int = 10,
+    device: str = "cuda" if torch.cuda.is_available() else "cpu",
+):
+    """
+    Optuna hyperparameter tuning for LSTM model.
+
+    Args:
+        train_loader: The training data loader.
+        val_loader: The validation data loader.
+        n_features (int): Number of features.
+        horizon (int): Number of timesteps to predict.
+        n_trials (int): Number of trials.
+        device (str): The device to train on.
+
+    Returns:
+        dict[str, list[float]]: A dictionary containing the best hyperparameters.
+    """
+    print("=========================================")
+    print("Starting Optuna Hyperparameter Tuning for LSTM...")
+    print("=========================================")
+
+    def objective(trial):
+        """
+        Objective function for Optuna hyperparameter tuning.
+
+        Args:
+            trial (optuna.Trial): The Optuna trial object.
+
+        Returns:
+            float: The best validation loss.
+        """
+        lr = trial.suggest_float("lr", 5e-6, 5e-3, log=True)
+        hidden_size = trial.suggest_categorical("hidden_size", [32, 64, 128, 256])
+        num_layers = trial.suggest_int("num_layers", 1, 3)
+        dropout = trial.suggest_float("dropout", 0.0, 0.5)
+
+        model = LSTMForecaster(
+            n_features=n_features,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            horizon=horizon,
+            dropout=dropout,
+        )
+
+        history = train_lstm(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            n_epochs=40, # Shorter epochs for faster tuning
+            lr=lr,
+            patience=5,
+            device=device,
+            recall=False,
+            trial=trial
+        )
+        return min(history["val_loss"])
+
+    study = optuna.create_study(
+        direction="minimize",
+        pruner=optuna.pruners.MedianPruner(n_startup_trials=7, n_warmup_steps=10, interval_steps=1)
+    )
+    study.optimize(objective, n_trials=n_trials)
+
+    print("Best hyperparameters found by Optuna: ", study.best_params)
+
+    # Save visualizations
+    import os
+    os.makedirs("results/figures", exist_ok=True)
+    
+    optuna_vis.plot_optimization_history(study)
+    plt.tight_layout()
+    plt.savefig("results/figures/lstm_optuna_history.png")
+    plt.close()
+
+    optuna_vis.plot_param_importances(study)
+    plt.tight_layout()
+    plt.savefig("results/figures/lstm_optuna_importances.png")
+    plt.close()
+
+    return study.best_params
 
         
     
