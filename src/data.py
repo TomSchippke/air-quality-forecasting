@@ -111,9 +111,9 @@ def split_X_y_seq(df: pd.DataFrame, target: str = "PM2.5", to_drop: list[str] = 
     y = df[target]
 
     if not include_PM10:
-        X = df.drop(columns=to_drop + [target] + ["PM10"])
+        X = df.drop(columns=to_drop + ["PM10"])
     else: 
-        X = df.drop(columns=to_drop + [target])
+        X = df.drop(columns=to_drop)
 
     return X, y
 
@@ -139,9 +139,9 @@ def split_X_y_rf(
     """
 
     if not include_PM10:
-        X = df.drop(columns=to_drop + [target] + horizon_columns + ["PM10"])
+        X = df.drop(columns=to_drop + horizon_columns + ["PM10"])
     else:
-        X = df.drop(columns=to_drop + [target] + horizon_columns)
+        X = df.drop(columns=to_drop + horizon_columns)
     
     y = df[horizon_columns]
 
