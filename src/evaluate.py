@@ -49,7 +49,7 @@ def main():
     ax.set_xticklabels(models)
     ax.legend()
     
-    metrics_plot_path = "results/figures/metrics_comparison.png"
+    metrics_plot_path = "results/figures/metrics/metrics_comparison.png"
     plt.savefig(metrics_plot_path)
     plt.close()
     print(f"Saved metrics comparison to {metrics_plot_path}")
@@ -72,7 +72,7 @@ def main():
     plt.legend()
     plt.grid(True)
     
-    rf_plot_path = "results/figures/rf_predictions.png"
+    rf_plot_path = "results/figures/predictions/rf_predictions.png"
     plt.savefig(rf_plot_path)
     plt.close()
     print(f"Saved Random Forest predictions plot to {rf_plot_path}")
@@ -93,7 +93,7 @@ def main():
     plt.legend()
     plt.grid(True)
     
-    lstm_plot_path = "results/figures/lstm_predictions.png"
+    lstm_plot_path = "results/figures/predictions/lstm_predictions.png"
     plt.savefig(lstm_plot_path)
     plt.close()
     print(f"Saved LSTM predictions plot to {lstm_plot_path}")
@@ -132,7 +132,7 @@ def main():
     plt.legend()
     plt.grid(True, alpha=0.3)
     
-    horizon_plot_path = "results/figures/lstm_horizons.png"
+    horizon_plot_path = "results/figures/predictions/lstm_horizons.png"
     plt.savefig(horizon_plot_path)
     plt.close()
     print(f"Saved LSTM horizons plot to {horizon_plot_path}")
@@ -152,7 +152,7 @@ def main():
         plt.legend()
         plt.grid(True)
         
-        transformer_plot_path = "results/figures/transformer_predictions.png"
+        transformer_plot_path = "results/figures/predictions/transformer_predictions.png"
         plt.savefig(transformer_plot_path)
         plt.close()
         print(f"Saved Transformer predictions plot to {transformer_plot_path}")
@@ -186,14 +186,140 @@ def main():
         plt.legend()
         plt.grid(True, alpha=0.3)
         
-        trans_horizon_plot_path = "results/figures/transformer_horizons.png"
+        trans_horizon_plot_path = "results/figures/predictions/transformer_horizons.png"
         plt.savefig(trans_horizon_plot_path)
         plt.close()
         print(f"Saved Transformer horizons plot to {trans_horizon_plot_path}")
+
+        # 7. Residual Analysis (Scatter plot of True vs Residuals for t+1)
+        print("Generating Residual Analysis scatter plot...")
+        plt.figure(figsize=(12, 8))
+        
+        # Load RF predictions
+        rf_true_res = np.load("results/predictions/rf_y_true.npy")[:, 0]
+        rf_pred_res = np.load("results/predictions/rf_y_pred.npy")[:, 0]
+        rf_residuals = rf_pred_res - rf_true_res
+        
+        # Load Transformer predictions
+        transformer_true_res = np.load("results/predictions/transformer_y_true.npy")[:, 0]
+        transformer_pred_res = np.load("results/predictions/transformer_y_pred.npy")[:, 0]
+        transformer_residuals = transformer_pred_res - transformer_true_res
+        
+        # Load Naive predictions
+        naive_true_res = np.load("results/predictions/naive_y_true.npy")[:, 0]
+        naive_pred_res = np.load("results/predictions/naive_y_pred.npy")[:, 0]
+        naive_residuals = naive_pred_res - naive_true_res
+        
+        # Load LSTM predictions
+        try:
+            lstm_true_res = np.load("results/predictions/lstm_y_true.npy")[:, 0]
+            lstm_pred_res = np.load("results/predictions/lstm_y_pred.npy")[:, 0]
+            lstm_residuals = lstm_pred_res - lstm_true_res
+        except FileNotFoundError:
+            lstm_true_res = []
+            lstm_residuals = []
+        
+        plt.figure(figsize=(14, 10))
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharex=True, sharey=True)
+        axes = axes.flatten()
+        
+        # Plot Naive
+        axes[0].scatter(naive_true_res, naive_residuals, alpha=0.4, label="Naive", color="#95a5a6", s=15, edgecolors='none')
+        axes[0].axhline(0, color='black', linestyle='--', linewidth=2)
+        axes[0].set_title("Naive")
+        axes[0].grid(True, alpha=0.3)
+        
+        # Plot RF
+        axes[1].scatter(rf_true_res, rf_residuals, alpha=0.4, label="Random Forest", color="#2ecc71", s=15, edgecolors='none')
+        axes[1].axhline(0, color='black', linestyle='--', linewidth=2)
+        axes[1].set_title("Random Forest")
+        axes[1].grid(True, alpha=0.3)
+        
+        # Plot LSTM
+        if len(lstm_residuals) > 0:
+            axes[2].scatter(lstm_true_res, lstm_residuals, alpha=0.4, label="LSTM", color="#e74c3c", s=15, edgecolors='none')
+        axes[2].axhline(0, color='black', linestyle='--', linewidth=2)
+        axes[2].set_title("LSTM")
+        axes[2].grid(True, alpha=0.3)
+        
+        # Plot Transformer
+        axes[3].scatter(transformer_true_res, transformer_residuals, alpha=0.4, label="Transformer", color="#3498db", s=15, edgecolors='none')
+        axes[3].axhline(0, color='black', linestyle='--', linewidth=2)
+        axes[3].set_title("Transformer")
+        axes[3].grid(True, alpha=0.3)
+        
+        fig.suptitle("Residual Analysis (1-hour ahead): Error vs True PM2.5 Value", fontsize=16, fontweight="bold")
+        fig.text(0.5, 0.04, "True PM2.5 Value (µg/m³)", ha='center', fontsize=12, fontweight="bold")
+        fig.text(0.04, 0.5, "Residual (Predicted - True)", va='center', rotation='vertical', fontsize=12, fontweight="bold")
+        
+        residual_plot_path = "results/figures/residuals/residuals_scatter.png"
+        plt.savefig(residual_plot_path)
+        plt.close()
+        print(f"Saved Residual scatter plot to {residual_plot_path}")
+        
+        # 8. Residual Distribution (Histogram)
+        print("Generating Residual Distribution histogram...")
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharex=True, sharey=True)
+        axes = axes.flatten()
+        
+        axes[0].hist(naive_residuals, bins=50, alpha=0.6, color="#95a5a6", edgecolor='black', density=True)
+        axes[0].axvline(0, color='black', linestyle='--', linewidth=2)
+        axes[0].set_title("Naive")
+        axes[0].grid(True, alpha=0.3)
+        
+        axes[1].hist(rf_residuals, bins=50, alpha=0.6, color="#2ecc71", edgecolor='black', density=True)
+        axes[1].axvline(0, color='black', linestyle='--', linewidth=2)
+        axes[1].set_title("Random Forest")
+        axes[1].grid(True, alpha=0.3)
+        
+        if len(lstm_residuals) > 0:
+            axes[2].hist(lstm_residuals, bins=50, alpha=0.6, color="#e74c3c", edgecolor='black', density=True)
+        axes[2].axvline(0, color='black', linestyle='--', linewidth=2)
+        axes[2].set_title("LSTM")
+        axes[2].grid(True, alpha=0.3)
+        
+        axes[3].hist(transformer_residuals, bins=50, alpha=0.6, color="#3498db", edgecolor='black', density=True)
+        axes[3].axvline(0, color='black', linestyle='--', linewidth=2)
+        axes[3].set_title("Transformer")
+        axes[3].grid(True, alpha=0.3)
+        
+        fig.suptitle("Distribution of Residuals (1-hour ahead)", fontsize=16, fontweight="bold")
+        fig.text(0.5, 0.04, "Residual (Predicted - True)", ha='center', fontsize=12, fontweight="bold")
+        fig.text(0.04, 0.5, "Density", va='center', rotation='vertical', fontsize=12, fontweight="bold")
+        
+        hist_plot_path = "results/figures/residuals/residuals_histogram.png"
+        plt.savefig(hist_plot_path)
+        plt.close()
+        print(f"Saved Residual histogram plot to {hist_plot_path}")
+
+        # 10. Autocorrelation of Residuals
+        print("Generating Residual Autocorrelation plot...")
+        from statsmodels.graphics.tsaplots import plot_acf
+        
+        fig, axes = plt.subplots(4, 1, figsize=(14, 16), sharex=True)
+        
+        plot_acf(naive_residuals, lags=48, ax=axes[0], color="#95a5a6", title="Naive Residuals Autocorrelation")
+        plot_acf(rf_residuals, lags=48, ax=axes[1], color="#2ecc71", title="Random Forest Residuals Autocorrelation")
+        if len(lstm_residuals) > 0:
+            plot_acf(lstm_residuals, lags=48, ax=axes[2], color="#e74c3c", title="LSTM Residuals Autocorrelation")
+        plot_acf(transformer_residuals, lags=48, ax=axes[3], color="#3498db", title="Transformer Residuals Autocorrelation")
+        
+        for ax in axes:
+            ax.grid(True, alpha=0.3)
+            ax.set_ylabel("Autocorrelation")
+        
+        axes[3].set_xlabel("Lags (hours)")
+        plt.tight_layout()
+        
+        acf_plot_path = "results/figures/residuals/residuals_autocorrelation.png"
+        plt.savefig(acf_plot_path)
+        plt.close()
+        print(f"Saved Residual ACF plot to {acf_plot_path}")
+
     except FileNotFoundError:
         print("Transformer predictions not found. Skipping Transformer plots.")
 
-    # 7. Naive Baseline Predictions
+    # 9. Naive Baseline Predictions
     print("Generating Naive Baseline prediction plot...")
     try:
         naive_true = np.load("results/predictions/naive_y_true.npy")
@@ -208,7 +334,7 @@ def main():
         plt.legend()
         plt.grid(True)
         
-        naive_plot_path = "results/figures/naive_predictions.png"
+        naive_plot_path = "results/figures/predictions/naive_predictions.png"
         plt.savefig(naive_plot_path)
         plt.close()
         print(f"Saved Naive Baseline predictions plot to {naive_plot_path}")

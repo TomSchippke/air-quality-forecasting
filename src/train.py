@@ -3,6 +3,8 @@ import torch
 import json
 import numpy as np
 import sys
+import os
+import joblib
 from src.data import (
     load_and_preprocess, 
     add_lag_features, 
@@ -67,6 +69,11 @@ X_train_seq, X_val_seq, X_test_seq, scaler_seq = scale_features(X_train_seq, X_v
 y_train_rf, y_val_rf, y_test_rf, target_scaler_rf = scale_target(y_train_rf, y_val_rf, y_test_rf)
 y_train_seq, y_val_seq, y_test_seq, target_scaler_seq = scale_target(y_train_seq, y_val_seq, y_test_seq)
 
+os.makedirs("results/scalers", exist_ok=True)
+joblib.dump(scaler_rf, "results/scalers/scaler_rf.joblib")
+joblib.dump(scaler_seq, "results/scalers/scaler_seq.joblib")
+joblib.dump(target_scaler_rf, "results/scalers/target_scaler_rf.joblib")
+joblib.dump(target_scaler_seq, "results/scalers/target_scaler_seq.joblib")
 
 training_data_toch = AirQualityLSTMDataset(
     X=X_train_seq,
@@ -133,6 +140,8 @@ if TUNE_LSTM:
         horizon=HORIZON,
         n_trials=30
     )
+    with open("results/lstm_best_params.json", "w") as f:
+        json.dump(best_lstm_params, f, indent=4)
     lstm_model = LSTMForecaster(
         n_features=X_train_seq.shape[1],
         hidden_size=best_lstm_params["hidden_size"],
@@ -150,12 +159,20 @@ if TUNE_LSTM:
         recall=False
     )
 else:
+    try:
+        with open("results/lstm_best_params.json", "r") as f:
+            best_lstm_params = json.load(f)
+            print("Loaded Optuna best parameters for LSTM")
+    except FileNotFoundError:
+        print("No Optuna parameters found, using default LSTM architecture")
+        best_lstm_params = {"hidden_size": 128, "num_layers": 2, "dropout": 0.4, "lr": 1e-4}
+        
     lstm_model = LSTMForecaster(
         n_features=X_train_seq.shape[1],
-        hidden_size=128,
-        num_layers=2,
+        hidden_size=best_lstm_params["hidden_size"],
+        num_layers=best_lstm_params["num_layers"],
         horizon=HORIZON,
-        dropout=0.4,
+        dropout=best_lstm_params["dropout"],
     )
     
     history = train_lstm(
@@ -163,7 +180,7 @@ else:
         train_loader=training_loader,
         val_loader=val_loader,
         n_epochs=100,
-        lr=1e-4,
+        lr=best_lstm_params["lr"],
         patience=10,
         recall=True # turn True to avoid retraining if model already exist 
     )
@@ -178,6 +195,8 @@ if TUNE_TRANSFORMER:
         horizon=HORIZON,
         n_trials=30
     )
+    with open("results/transformer_best_params.json", "w") as f:
+        json.dump(best_trans_params, f, indent=4)
     transformer_model = TransformerForecaster(
         n_features=X_train_seq.shape[1],
         d_model=best_trans_params["d_model"],
@@ -196,12 +215,20 @@ if TUNE_TRANSFORMER:
         recall=False
     )
 else:
+    try:
+        with open("results/transformer_best_params.json", "r") as f:
+            best_trans_params = json.load(f)
+            print("Loaded Optuna best parameters for Transformer")
+    except FileNotFoundError:
+        print("No Optuna parameters found, using default Transformer architecture")
+        best_trans_params = {"d_model": 128, "nhead": 8, "num_layers": 2, "dropout": 0.3, "lr": 1e-5}
+        
     transformer_model = TransformerForecaster(
         n_features=X_train_seq.shape[1],
-        d_model=128,
-        nhead=8,        
-        num_layers=2,        
-        dropout=0.3,
+        d_model=best_trans_params["d_model"],
+        nhead=best_trans_params["nhead"],
+        num_layers=best_trans_params["num_layers"],
+        dropout=best_trans_params["dropout"],
         horizon=HORIZON
     )
     
@@ -210,7 +237,7 @@ else:
         train_loader=training_loader,
         val_loader=val_loader,
         n_epochs=100,
-        lr=1e-5,
+        lr=best_trans_params["lr"],
         patience=10,
         recall=True 
     )

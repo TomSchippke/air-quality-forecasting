@@ -274,11 +274,11 @@ def tune_transformer(
         Returns:
             float: The best validation loss.
         """
-        lr = trial.suggest_float("lr", 5e-6, 5e-3, log=True)
-        d_model = trial.suggest_categorical("d_model", [32, 64, 128, 256])
+        lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
+        d_model = trial.suggest_categorical("d_model", [64, 128, 256])
         nhead = trial.suggest_categorical("nhead", [2, 4, 8])
-        num_layers = trial.suggest_int("num_layers", 1, 4)
-        dropout = trial.suggest_float("dropout", 0.0, 0.5)
+        num_layers = trial.suggest_int("num_layers", 1, 3)
+        dropout = trial.suggest_float("dropout", 0.2, 0.5)
 
         model = TransformerForecaster(
             n_features=n_features,
