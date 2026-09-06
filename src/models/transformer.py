@@ -9,6 +9,8 @@ import optuna
 import optuna.visualization.matplotlib as optuna_vis
 import torch.nn as nn 
 import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
+from src.data import AirQualityLSTMDataset
 
 class PositionalEncoding(nn.Module):
     '''
@@ -239,26 +241,30 @@ def train_transformer(
     return history
 
 def tune_transformer(
-    train_loader,
-    val_loader,
+    X_train,
+    y_train,
+    X_val,
+    y_val,
     n_features: int,
-    horizon: int,
+    horizon: int = 6,
     n_trials: int = 10,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
-):
+) -> dict:
     """
     Optuna hyperparameter tuning for Transformer model.
 
     Args:
-        train_loader: The training data loader.
-        val_loader: The validation data loader.
+        X_train: Training features.
+        y_train: Training targets.
+        X_val: Validation features.
+        y_val: Validation targets.
         n_features (int): Number of features.
         horizon (int): Number of timesteps to predict.
         n_trials (int): Number of trials.
         device (str): The device to train on.
 
     Returns:
-        dict[str, list[float]]: A dictionary containing the best hyperparameters.
+        dict: A dictionary containing the best hyperparameters.
     """
     print("=========================================")
     print("Starting Optuna Hyperparameter Tuning for Transformer...")
@@ -274,11 +280,29 @@ def tune_transformer(
         Returns:
             float: The best validation loss.
         """
-        lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
-        d_model = trial.suggest_categorical("d_model", [64, 128, 256])
-        nhead = trial.suggest_categorical("nhead", [2, 4, 8])
-        num_layers = trial.suggest_int("num_layers", 1, 3)
-        dropout = trial.suggest_float("dropout", 0.2, 0.5)
+        lr = trial.suggest_float("lr", 1e-6, 1e-2, log=True) # Widened LR search
+        d_model = trial.suggest_categorical("d_model", [32, 64, 128, 256, 512]) # Expanded capacity
+        nhead = trial.suggest_categorical("nhead", [1, 2, 4, 8, 16]) # Expanded heads
+        num_layers = trial.suggest_int("num_layers", 1, 5) # Expanded layers
+        dropout = trial.suggest_float("dropout", 0.1, 0.6) # Expanded dropout
+        window_size = trial.suggest_categorical("window_size", [12, 24, 48, 72]) # Tuned window size
+
+        training_data_toch = AirQualityLSTMDataset(
+            X=X_train,
+            y=y_train,
+            input_window=window_size,
+            horizon=horizon
+        )
+
+        val_data_toch = AirQualityLSTMDataset(
+            X=X_val,
+            y=y_val,
+            input_window=window_size,
+            horizon=horizon
+        )
+
+        train_loader = DataLoader(dataset=training_data_toch, batch_size=16, shuffle=True)
+        val_loader = DataLoader(dataset=val_data_toch, batch_size=16, shuffle=False)
 
         model = TransformerForecaster(
             n_features=n_features,

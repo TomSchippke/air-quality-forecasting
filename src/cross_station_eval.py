@@ -56,7 +56,7 @@ def load_models_and_scalers(n_features_seq):
         with open("results/lstm_best_params.json", "r") as f:
             best_lstm_params = json.load(f)
     except FileNotFoundError:
-        best_lstm_params = {"hidden_size": 128, "num_layers": 2, "dropout": 0.4}
+        best_lstm_params = {"hidden_size": 128, "num_layers": 2, "dropout": 0.4, "window_size": 48}
         
     lstm_model = LSTMForecaster(
         n_features=n_features_seq,
@@ -73,7 +73,7 @@ def load_models_and_scalers(n_features_seq):
         with open("results/transformer_best_params.json", "r") as f:
             best_trans_params = json.load(f)
     except FileNotFoundError:
-        best_trans_params = {"d_model": 128, "nhead": 8, "num_layers": 2, "dropout": 0.3}
+        best_trans_params = {"d_model": 128, "nhead": 8, "num_layers": 2, "dropout": 0.3, "window_size": 48}
         
     transformer_model = TransformerForecaster(
         n_features=n_features_seq,
@@ -86,9 +86,9 @@ def load_models_and_scalers(n_features_seq):
     transformer_model.load_state_dict(torch.load("results/models/transformer_best.pth", map_location="cpu", weights_only=True))
     transformer_model.eval()
     
-    return scaler_rf, scaler_seq, target_scaler_rf, target_scaler_seq, rf_model, lstm_model, transformer_model
+    return scaler_rf, scaler_seq, target_scaler_rf, target_scaler_seq, rf_model, lstm_model, transformer_model, best_lstm_params, best_trans_params
 
-def evaluate_station(station, scaler_rf, scaler_seq, target_scaler_rf, target_scaler_seq, rf_model, lstm_model, transformer_model):
+def evaluate_station(station, scaler_rf, scaler_seq, target_scaler_rf, target_scaler_seq, rf_model, lstm_model, transformer_model, best_lstm_params, best_trans_params):
     print(f"Evaluating {station}...")
     df = load_and_preprocess(location=station)
     df = add_lag_features(df, target="PM2.5", lags=[1,2,3,6,12,24], horizon=HORIZON)
@@ -126,19 +126,31 @@ def evaluate_station(station, scaler_rf, scaler_seq, target_scaler_rf, target_sc
     mae_rf = float(mean_absolute_error(y_test_rf, y_pred_rf))
     
     # DEEP LEARNING (LSTM + Transformer)
-    test_data_toch = AirQualityLSTMDataset(X=X_test_seq, y=y_test_seq, input_window=48, horizon=HORIZON)
-    test_loader = DataLoader(dataset=test_data_toch, batch_size=32, shuffle=False)
+    lstm_window_size = best_lstm_params.get("window_size", 48)
+    test_data_lstm = AirQualityLSTMDataset(X=X_test_seq, y=y_test_seq, input_window=lstm_window_size, horizon=HORIZON)
+    test_loader_lstm = DataLoader(dataset=test_data_lstm, batch_size=32, shuffle=False)
     
-    preds_lstm, preds_transformer, trues = [], [], []
+    preds_lstm, trues_lstm = [], []
     with torch.no_grad():
-        for x_batch, y_batch in test_loader:
+        for x_batch, y_batch in test_loader_lstm:
             preds_lstm.append(lstm_model(x_batch).numpy())
-            preds_transformer.append(transformer_model(x_batch).numpy())
-            trues.append(y_batch.numpy())
+            trues_lstm.append(y_batch.numpy())
             
     y_pred_lstm = np.concatenate(preds_lstm)
+    y_true_lstm = np.concatenate(trues_lstm)
+
+    trans_window_size = best_trans_params.get("window_size", 48)
+    test_data_trans = AirQualityLSTMDataset(X=X_test_seq, y=y_test_seq, input_window=trans_window_size, horizon=HORIZON)
+    test_loader_trans = DataLoader(dataset=test_data_trans, batch_size=32, shuffle=False)
+    
+    preds_transformer, trues_trans = [], []
+    with torch.no_grad():
+        for x_batch, y_batch in test_loader_trans:
+            preds_transformer.append(transformer_model(x_batch).numpy())
+            trues_trans.append(y_batch.numpy())
+            
     y_pred_transformer = np.concatenate(preds_transformer)
-    y_true_seq = np.concatenate(trues)
+    y_true_trans = np.concatenate(trues_trans)
     
     # Inverse transform
     if target_scaler_seq.n_features_in_ == 1:
@@ -150,20 +162,24 @@ def evaluate_station(station, scaler_rf, scaler_seq, target_scaler_rf, target_sc
         y_pred_lstm = target_scaler_seq.inverse_transform(y_pred_lstm)
         y_pred_transformer = target_scaler_seq.inverse_transform(y_pred_transformer)
         
-    rmse_lstm = float(np.sqrt(mean_squared_error(y_true_seq, y_pred_lstm)))
-    mae_lstm = float(mean_absolute_error(y_true_seq, y_pred_lstm))
+    # The models were trained on log1p(PM2.5), so we apply expm1 to get raw PM2.5 back
+    y_pred_lstm = np.expm1(y_pred_lstm)
+    y_pred_transformer = np.expm1(y_pred_transformer)
+        
+    rmse_lstm = float(np.sqrt(mean_squared_error(y_true_lstm, y_pred_lstm)))
+    mae_lstm = float(mean_absolute_error(y_true_lstm, y_pred_lstm))
     
-    rmse_trans = float(np.sqrt(mean_squared_error(y_true_seq, y_pred_transformer)))
-    mae_trans = float(mean_absolute_error(y_true_seq, y_pred_transformer))
+    rmse_trans = float(np.sqrt(mean_squared_error(y_true_trans, y_pred_transformer)))
+    mae_trans = float(mean_absolute_error(y_true_trans, y_pred_transformer))
     
     # Save CSV of predictions and residuals (1-hour ahead)
-    n_seq = len(y_true_seq)
+    n_seq = min(len(y_true_lstm), len(y_true_trans))
     
     naive_p = y_pred_naive[-n_seq:, 0]
     rf_p = y_pred_rf[-n_seq:, 0]
-    true_vals = y_true_seq[:, 0]
-    lstm_p = y_pred_lstm[:, 0]
-    trans_p = y_pred_transformer[:, 0]
+    true_vals = y_true_lstm[-n_seq:, 0]
+    lstm_p = y_pred_lstm[-n_seq:, 0]
+    trans_p = y_pred_transformer[-n_seq:, 0]
     
     df_preds = pd.DataFrame({
         "True_PM25": true_vals,
@@ -198,12 +214,12 @@ def main():
     X_dummy, _ = split_X_y_seq(dummy_df.dropna(), to_drop=FEATURE_TO_DROP + lag_columns + horizon_columns, include_PM10=INCLUDE_PM10)
     n_features_seq = X_dummy.shape[1]
     
-    scaler_rf, scaler_seq, target_scaler_rf, target_scaler_seq, rf_model, lstm_model, transformer_model = load_models_and_scalers(n_features_seq)
+    scaler_rf, scaler_seq, target_scaler_rf, target_scaler_seq, rf_model, lstm_model, transformer_model, best_lstm_params, best_trans_params = load_models_and_scalers(n_features_seq)
     
     results = {}
     for station in STATIONS:
         results[station] = evaluate_station(
-            station, scaler_rf, scaler_seq, target_scaler_rf, target_scaler_seq, rf_model, lstm_model, transformer_model
+            station, scaler_rf, scaler_seq, target_scaler_rf, target_scaler_seq, rf_model, lstm_model, transformer_model, best_lstm_params, best_trans_params
         )
         
     # Save results to JSON
