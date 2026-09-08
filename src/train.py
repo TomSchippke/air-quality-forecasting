@@ -1,4 +1,3 @@
-from scipy.optimize._trustregion_constr import equality_constrained_sqp
 import torch
 import json
 import numpy as np
@@ -25,7 +24,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 HORIZON = 6
 INCLUDE_PM10 = False
-TUNE_LSTM = False
+TUNE_LSTM = True
 TUNE_TRANSFORMER = False
 FEATURE_TO_DROP = ["datetime", "station", "No", "day", "year"]
 
@@ -108,7 +107,7 @@ if TUNE_LSTM:
         y_val=y_val_seq,
         n_features=X_train_seq.shape[1],
         horizon=HORIZON,
-        n_trials=30
+        n_trials=40
     )
     with open("results/lstm_best_params.json", "w") as f:
         json.dump(best_lstm_params, f, indent=4)
@@ -177,7 +176,7 @@ if TUNE_TRANSFORMER:
         y_val=y_val_seq,
         n_features=X_train_seq.shape[1],
         horizon=HORIZON,
-        n_trials=30
+        n_trials=40
     )
     with open("results/transformer_best_params.json", "w") as f:
         json.dump(best_trans_params, f, indent=4)

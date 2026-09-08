@@ -248,11 +248,11 @@ def tune_lstm(
         Returns:
             float: The best validation loss.
         """
-        lr = trial.suggest_float("lr", 1e-6, 1e-2, log=True) # Widened LR search
-        hidden_size = trial.suggest_categorical("hidden_size", [16, 32, 64, 128, 256, 512]) # Expanded capacity
-        num_layers = trial.suggest_int("num_layers", 1, 5) # Expanded layers
-        dropout = trial.suggest_float("dropout", 0.0, 0.6) # Expanded dropout
-        window_size = trial.suggest_categorical("window_size", [12, 24, 36, 48]) # Tuned window size
+        lr = trial.suggest_float("lr", 1e-6, 1e-2, log=True) 
+        hidden_size = trial.suggest_categorical("hidden_size", [16, 32, 64, 128]) 
+        num_layers = trial.suggest_int("num_layers", 1, 4) 
+        dropout = trial.suggest_float("dropout", 0.3, 0.5) 
+        window_size = trial.suggest_categorical("window_size", [6, 12, 18, 24]) 
 
         training_data_toch = AirQualityLSTMDataset(
             X=X_train,
@@ -283,9 +283,9 @@ def tune_lstm(
             model=model,
             train_loader=train_loader,
             val_loader=val_loader,
-            n_epochs=40, # Shorter epochs for faster tuning
+            n_epochs=40, 
             lr=lr,
-            patience=5,
+            patience=10,
             device=device,
             recall=False,
             trial=trial

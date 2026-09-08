@@ -5,3 +5,22 @@ __pycache__/
 .venv/
 wandb/
 *.pt
+
+# macOS
+.DS_Store
+
+# Virtual environment
+env/
+
+# Large model artifacts (regenerable via train.py)
+results/models/
+*.joblib
+*.npy
+
+# Regenerable outputs
+results/station_predictions/
+results/scalers/
+results/predictions/
+
+# Optuna
+optuna_*.db

@@ -280,12 +280,12 @@ def tune_transformer(
         Returns:
             float: The best validation loss.
         """
-        lr = trial.suggest_float("lr", 1e-6, 1e-2, log=True) # Widened LR search
-        d_model = trial.suggest_categorical("d_model", [32, 64, 128, 256, 512]) # Expanded capacity
-        nhead = trial.suggest_categorical("nhead", [1, 2, 4, 8, 16]) # Expanded heads
-        num_layers = trial.suggest_int("num_layers", 1, 5) # Expanded layers
-        dropout = trial.suggest_float("dropout", 0.1, 0.6) # Expanded dropout
-        window_size = trial.suggest_categorical("window_size", [12, 24, 48, 72]) # Tuned window size
+        lr = trial.suggest_float("lr", 1e-6, 1e-2, log=True) 
+        d_model = trial.suggest_categorical("d_model", [32, 64, 128])
+        nhead = trial.suggest_categorical("nhead", [1, 2, 4, 8]) 
+        num_layers = trial.suggest_int("num_layers", 1, 3) 
+        dropout = trial.suggest_float("dropout", 0.3, 0.6) 
+        window_size = trial.suggest_categorical("window_size", [12, 18, 24, 30]) 
 
         training_data_toch = AirQualityLSTMDataset(
             X=X_train,
@@ -317,9 +317,9 @@ def tune_transformer(
             model=model,
             train_loader=train_loader,
             val_loader=val_loader,
-            n_epochs=40, # Shorter epochs for faster tuning
+            n_epochs=40, 
             lr=lr,
-            patience=5,
+            patience=10,
             device=device,
             recall=False,
             trial=trial

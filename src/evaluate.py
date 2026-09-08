@@ -54,6 +54,67 @@ def main():
     plt.close()
     print(f"Saved metrics comparison to {metrics_plot_path}")
 
+    # 1b. Per-horizon RMSE breakdown
+    print("Generating per-horizon RMSE breakdown plot...")
+    
+    model_files = {
+        "Naive": ("results/predictions/naive_y_true.npy", "results/predictions/naive_y_pred.npy"),
+        "Random Forest": ("results/predictions/rf_y_true.npy", "results/predictions/rf_y_pred.npy"),
+        "LSTM": ("results/predictions/lstm_y_true.npy", "results/predictions/lstm_y_pred.npy"),
+        "Transformer": ("results/predictions/transformer_y_true.npy", "results/predictions/transformer_y_pred.npy"),
+    }
+    
+    model_colors = {
+        "Naive": "#95a5a6",
+        "Random Forest": "#2ecc71",
+        "LSTM": "#e74c3c",
+        "Transformer": "#3498db",
+    }
+    
+    horizons = np.arange(1, 7)
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    
+    for model_name, (true_path, pred_path) in model_files.items():
+        try:
+            y_true = np.load(true_path)
+            y_pred = np.load(pred_path)
+            
+            rmse_per_h = []
+            mae_per_h = []
+            for h in range(6):
+                errors = y_pred[:, h] - y_true[:, h]
+                rmse_per_h.append(np.sqrt(np.mean(errors ** 2)))
+                mae_per_h.append(np.mean(np.abs(errors)))
+            
+            color = model_colors[model_name]
+            ax1.plot(horizons, rmse_per_h, marker='o', label=model_name, color=color, linewidth=2, markersize=6)
+            ax2.plot(horizons, mae_per_h, marker='s', label=model_name, color=color, linewidth=2, markersize=6)
+        except FileNotFoundError:
+            print(f"  Skipping {model_name} (predictions not found)")
+    
+    ax1.set_xlabel("Prediction Horizon (hours ahead)", fontsize=12, fontweight='bold')
+    ax1.set_ylabel("RMSE (µg/m³)", fontsize=12, fontweight='bold')
+    ax1.set_title("RMSE by Prediction Horizon", fontsize=14, fontweight='bold')
+    ax1.set_xticks(horizons)
+    ax1.set_xticklabels([f"t+{h}" for h in horizons])
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    ax2.set_xlabel("Prediction Horizon (hours ahead)", fontsize=12, fontweight='bold')
+    ax2.set_ylabel("MAE (µg/m³)", fontsize=12, fontweight='bold')
+    ax2.set_title("MAE by Prediction Horizon", fontsize=14, fontweight='bold')
+    ax2.set_xticks(horizons)
+    ax2.set_xticklabels([f"t+{h}" for h in horizons])
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    horizon_metrics_path = "results/figures/metrics/per_horizon_metrics.png"
+    plt.savefig(horizon_metrics_path, dpi=150)
+    plt.close()
+    print(f"Saved per-horizon metrics to {horizon_metrics_path}")
+
     # 2. Random Forest Predictions
     print("Generating Random Forest prediction plot...")
     rf_true = np.load("results/predictions/rf_y_true.npy")
